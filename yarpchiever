@@ -1,0 +1,203 @@
+#!/usr/bin/php -q
+<?php
+	/* ============================================================ *\
+	 * 	Yarpchiever v1.0			
+	 * ============================================================	
+	 * 	Author 	: K4pT3N
+	 * 	URL	: http://codernate.org | http://explorecrew.org
+	 * 	Contact	: kapten.mozac@gmail.com
+	 * 		
+	\* ============================================================ */
+	
+	class yarpchiever {
+		function __construct(){
+			($_SERVER['argc']==1)?$this->help():$this->param_main();
+		}
+		function param_main(){
+			$rparam=$_SERVER['argv'];
+			(in_array('-d',$rparam))?$this->decompress_procedure():$this->compress_procedure();
+		}
+		function param_value($idx){
+			return $_SERVER['argv'][$idx+1];
+		}
+		function param_key_index($param){
+			return array_search($param,$_SERVER['argv']);
+		}
+		function compress_procedure(){
+			$filename=$this->param_value($this->param_key_index('-f'));
+			$this->param_f($filename);
+		}
+		function decompress_procedure(){
+			$filename=$this->param_value($this->param_key_index('-d'));
+			$this->param_d($filename);
+		}
+		function param_f($filename){
+			echo "Reading file...";
+			if(file_exists($filename)){
+				$f=file_get_contents($filename);
+				$content='yarp|'.$filename.'|'.$f;
+				$zip=gzcompress($content,9);
+				echo "\tdone\n";
+				$this->encrypt($filename,$zip);
+			} else {
+				echo "File not found.\nExit.\n";
+			}
+		}
+		function param_o($filename,$contents){
+			$key=$this->param_key_index('-o');
+			$output=($key=='')?$filename.'.zit':$this->param_value($key);
+			
+			$fp=gzopen($output,"w9");
+			$packed=hex2bin($contents);
+			gzwrite($fp,$packed);
+			gzclose($fp);
+			if($this->param_key_index('-r')>0) unlink($filename);
+		}
+		function param_p($filename,$contents){
+			$p=$this->param_key_index('-p');
+			$output=($p>0)?$this->param_value($p):$filename;
+			$fp=fopen($output,"wb");
+			fwrite($fp,$contents);
+			fclose($fp);
+			echo "\tdone\n";
+			echo "\nFile extracted successfully.\n";
+		}
+		function param_d($filename){
+			if(file_exists($filename)){
+				echo "Reading file...\n";
+				echo "Validating token...";
+				$token=$this->is_token();
+				if($token){
+					echo "\tdone\n";
+					echo "Extracting file...";
+					$f=file_get_contents($filename);
+					$rest=substr($f,-4);
+					$fpsize=end(unpack("V",$rest));
+					$fp = gzopen($filename, "rb");
+					$fread = gzread($fp, $fpsize);
+					gzclose($fp);
+					
+					$hex=bin2hex($fread);
+					$rotated=yarpRotate($hex,$token,-1);
+					$bin=hex2bin($rotated);
+					$ungzip=gzuncompress($bin);
+					$header=explode("|",$ungzip,3);
+					if($header[0]!=="yarp"){
+						echo "\nFalse token\n";
+					} else {
+						$this->param_p($header[1],$header[2]);
+					}
+				} else {
+					echo "\nToken not valid\n";
+				}
+			} else {
+				echo "File not found.\nExit.\n";
+			}
+		}
+		function is_token(){
+			$k=$this->param_key_index('-k');
+			if($k>0){
+				return fakemd5_decode($this->param_value($k));
+			} else {
+				$u=$this->param_key_index('-u');
+				if($u>0){
+					if(file_exists($this->param_value($u))){
+						$fp=file_get_contents($this->param_value($u));
+						return fakemd5_decode($fp);
+					} else {
+						return false;
+					}
+				} else {
+					return false;
+				}
+			}
+		}
+		function encrypt($filename,$contents){
+			echo "Encrypting...";
+			$hex=bin2hex($contents);
+			$salt=generateSalt($hex);
+			$rot=fakemd5_decode($salt);
+			$rotated=yarpRotate($hex,$rot);
+			echo "\tdone\n";
+			echo "Compressing done.\n";
+			if($this->param_key_index('-w')>0){
+				$fp=fopen(".token","w");
+				fwrite($fp,$salt);
+				fclose($fp);
+				echo "Token key saved to .token\n";
+			} else {
+				echo "Token key : ".$salt."\n";
+			}
+			$this->param_o($filename,$rotated);
+		}
+		function help(){
+			echo "Usage:\n";
+			echo "$ ./yarpchiever [-d|-f] FILENAME [parameter]\n"; 
+			echo "Parameter:\n"; 
+			echo "Compress \n\t[required]:\n\t\t-f filenya\n\t[optional]\n\t\t-o Output compressed file\n\t\t-w output token key to file\n\t\t-r delete original file\nDecompress\n\t[required]\n\t\t-d file to decompress\n\t\t[-k|-u] Token's key to decompress compressed file. \"-k\" input token manually. \"-u\" input token from existing file \".token\".\n\t[optional]\n\t\t-p Output decompressed file (default: set to original file name)\n\n";
+			echo "Example:\n\tCompress : ./yarpchiever -f file.txt -o file.txt.zit\n";
+			echo "\tDecompress: ./yarpchiever -d file.txt.zit -p file1.txt -k [tokenkey]\n\n";
+		}
+	}
+	$y=new yarpchiever;
+
+	function generateSalt($str){
+		return fakemd5_encode(rand(1,1000),true);
+	}
+	function fakemd5_encode($str,$bool=false){
+        $len = strlen($str);
+        $hex = array(1=>1,2,3,4,5,6,7,8,9,"a","b","c","d","e","f");
+        if($len>15){
+            return false;     
+        } else {
+            $hash = NULL;
+            $rand = generateChars(32,$bool);
+            $obj = strrev($str);
+            $used = $len * 2;
+            $cover = substr($rand,$used,31-$used);
+            for($i=0;$i<$len;$i++){
+                $hash .= substr($rand,$i * 2 ,1).substr($obj,$i,1);
+            }
+            return $hash.$cover.$hex[$len];
+        }
+    } 
+    function generateChars($limit,$specialchars=false,$type='all'){
+		$hexa=NULL;
+		$chars = ($specialchars===false)?null:"^-+";
+		$chrup='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+		$chrlow='abcdefghijklmnopqrstuvqxyz';
+		$chrnum='0123456789';
+		switch($type){
+			case 'up' 	: $chr=$chrup.$chars; break;
+			case 'low' 	: $chr=$chrlow.$chars; break;
+			case 'num' 	: $chr=$chrnum.$chars; break;
+			case 'uplow': $chr=$chrup.$chrlow.$chars; break;
+			case 'upnum': $chr=$chrup.$chrnum.$chars; break;
+			case 'lownum': $chr=$chrlow.$chrnum.$chars; break;
+			default		: $chr=$chrup.$chrlow.$chrnum.$chars; break;
+		}
+		for($i=1;$i<$limit+1;$i++){
+			$rIdx = rand(1,strlen($chr));
+			$hexa .=substr($chr,$rIdx,1);
+		}
+		return $hexa;
+	}	
+    function fakemd5_decode($str){
+        $hex = array(1=>1,2,3,4,5,6,7,8,9,"a","b","c","d","e","f");
+        $len = array_search(substr($str,-1,1),$hex);
+        $hash = NULL;
+        for($i=0;$i<$len;$i++){
+            $hash .= substr($str,$i * 2+1,1);
+        }
+        return strrev($hash);
+    } 
+	function yarpRotate($bin,$n,$rot=1){
+		$n=$n*$rot;
+		$output=null;
+		for($i=0;$i<strlen($bin);$i++){
+			$x=$i+$n;
+			if($x>strlen($bin)-1) $x=$x-strlen($bin);
+			$output .= substr($bin,$x,1);
+		}
+		return $output;
+	}
